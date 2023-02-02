@@ -1,0 +1,88 @@
+*, *::before, *::after {
+	margin: 0;
+	padding: 0;
+	box-sizing: border-box;
+}
+
+body {
+	font-family: "Courier New", Courier, monospace;
+}
+
+button {
+	font-size: 1rem;
+	font-family: inherit;
+	padding: 0.25em 0.5em;
+	cursor: pointer;
+}
+
+canvas {
+	width: 28px;
+	height: 28px;
+	background-color: black;
+}
+
+#container {
+	min-height: 100vh;
+	display: grid;
+	grid-template-areas:
+		"header		header"
+		"buttons	info"
+		"output		output"
+		"footer		footer";
+	grid-template-rows: auto auto 1fr auto;
+	gap: 1em;
+	padding: 1em;
+}
+
+header {
+	grid-area: header;
+}
+
+h1 {
+	text-align: center;
+}
+
+#button-container {
+	grid-area: buttons;
+	width: fit-content;
+	justify-self: center;
+	display: grid;
+	gap: 1em;
+}
+
+#generate-container {
+	display: flex;
+	align-items: center;
+	gap: 1em;
+}
+
+#info-container {
+	grid-area: info;
+	text-align: end;
+}
+
+#generated-images {
+	grid-area: output;
+	display: flex;
+	flex-direction: column;
+	flex-wrap: wrap;
+	gap: 1em;
+	padding: 1em;
+	border: 1px solid black;
+}
+
+footer {
+	grid-area: footer;
+	align-self: end;
+	text-align: end;
+}
+
+.result {
+	display: flex;
+	align-items: center;
+	gap: 1em;
+}
+
+.result h2 {
+	font-size: 1.25rem;
+}
