@@ -1,3 +1,4 @@
+import { imageWidth, imageHeight, imageChannels } from "./config.js";
 import { displayEpochReport, displayTrainingInfo } from "./ui.js";
 import { selectRealSamples, generateFakeSamples } from "./data.js";
 
@@ -20,23 +21,23 @@ export const createDiscriminator = () => {
 	return model;
 };
 
-export const createGenerator = (latentDim) => {
+export const createGenerator = () => {
 	const model = tf.sequential();
 
-	// 7x7 image
-	model.add(tf.layers.dense({ units: 128 * 7 * 7, inputDim: latentDim }));
-	model.add(tf.layers.leakyReLU(0.2));
+	// Encoder
+	model.add(tf.layers.conv2d({ filters: 32, kernelSize: 3, padding: 'same', activation: 'relu', inputShape: [28, 28, 1] }));
+	model.add(tf.layers.conv2d({ filters: 64, kernelSize: 3, strides: 2, padding: 'same', activation: 'relu' }));
+	model.add(tf.layers.conv2d({ filters: 128, kernelSize: 3, strides: 2, padding: 'same', activation: 'relu' }));
+	model.add(tf.layers.flatten());
+	
+	// Latent vector
+	model.add(tf.layers.dense({ units: 7 * 7 * 128, activation: 'relu' }));
 	model.add(tf.layers.reshape({ targetShape: [7, 7, 128] }));
 	
-	// upsample to 14x14
-	model.add(tf.layers.conv2dTranspose({ filters: 128, kernelSize: [4, 4], strides: [2, 2], padding: "same" }));
-	model.add(tf.layers.leakyReLU(0.2));
-	
-	// upsample to 28x28
-	model.add(tf.layers.conv2dTranspose({ filters: 128, kernelSize: [4, 4], strides: [2, 2], padding: "same" }));
-	model.add(tf.layers.leakyReLU(0.2));
-
-	model.add(tf.layers.conv2d({ filters: 1, kernelSize: [7, 7], activation: "sigmoid", padding: "same" }));
+	// Output layer
+	model.add(tf.layers.conv2dTranspose({ filters: 64, kernelSize: 3, strides: 2, padding: 'same', activation: 'relu' }));
+	model.add(tf.layers.conv2dTranspose({ filters: 1, kernelSize: 3, strides: 2, padding: 'same', activation: 'tanh' }));
+	// model.summary();
 
 	// Generator model is not compiled as it is only trained as part of the combined model
 	return model;
@@ -64,46 +65,43 @@ export const downloadModel = (model, name) => {
 	model.save(`downloads://${name}`);
 };
 
-export const trainModel = async (generator, discriminator, gan, dataset, latentDim, epochs = 10, batchSize = 64) => {
+export const trainModel = async (generator, discriminator, gan, dataset, epochs = 10, batchSize = 64) => {
 	const batchesPerEpoch = Math.floor(dataset.shape[0] / batchSize);
 	const halfBatch = Math.floor(batchSize / 2);
 
 	for (let epoch = 0; epoch < epochs; epoch++) {
 		for (let batch = 0; batch < batchesPerEpoch; batch++) {
-			// get randomly selected 'real' samples
-			const [xReal, yReal] = selectRealSamples(dataset, halfBatch);
+			// Select half batch of real samples
+			const [realSamples, realLabels] = selectRealSamples(dataset, halfBatch);
 
-			// generate 'fake' examples
-			const [xFake, yFake] = await generateFakeSamples(generator, latentDim, halfBatch);
+			// Generate half batch of fake samples
+			const [fakeSamples, fakeLabels] = await generateFakeSamples(generator, halfBatch);
 
-			// create training set for the discriminator
-			const X = tf.concat([xReal, xFake], 0);
-			const y = tf.concat([yReal, yFake], 0);
+			// Merge real and fake samples to create training set for the discriminator
+			const samples = tf.concat([realSamples, fakeSamples], 0);
+			const labels = tf.concat([realLabels, fakeLabels], 0);
 
-			// update discriminator model weights
+			// Train the discriminator, then freeze weights while generator trains
 			discriminator.trainable = true;
-			const [discLoss, discAcc] = await discriminator.trainOnBatch(X, y);
+			const [discLoss, discAcc] = await discriminator.trainOnBatch(samples, labels);
 			discriminator.trainable = false;
 
-			let genLoss;
-			for (let i = 0; i < 5; i++) {
-				// prepare points in latent space as input for the generator
-				const xGan = tf.randomNormal([batchSize, latentDim]);
-				
-				// create inverted labels for the fake samples
-				const yGan = tf.ones([batchSize, 1]);
-				
-				// update the generator via the discriminator's error
-				genLoss = await gan.trainOnBatch(xGan, yGan);
-			}
+			// Generate normally distributed noise as input for the generator
+			const noise = tf.randomNormal([batchSize, imageHeight, imageWidth, imageChannels]);
+			
+			// Create real class labels for the fake samples
+			const ganLabels = tf.ones([batchSize, 1]);
+			
+			// Train the generator using the discriminator's gradients
+			const genLoss = await gan.trainOnBatch(noise, ganLabels);
 
-			// summarize loss on this batch
+			// Display training info for this batch
 			displayTrainingInfo(epoch, batch, batchesPerEpoch, discLoss, genLoss);
 			console.log(`Epoch: ${epoch + 1}, Batch: ${batch + 1}/${batchesPerEpoch}, Discriminator Loss: ${discLoss.toFixed(3)}, Generator Loss: ${genLoss.toFixed(3)}`);
 		}
-		// evaluate the model performance, sometimes
+		// Display discriminator accuracy
 		if ((epoch + 1) % 1 == 0) {
-			displayEpochReport(epoch, generator, discriminator, dataset, latentDim);
+			displayEpochReport(epoch, generator, discriminator, dataset);
 		}
 	}
 };

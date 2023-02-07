@@ -1,4 +1,4 @@
-import { selectRealSamples, generateFakeSamples } from "./data.js";
+import { selectRealSamples, generateFakeSamples, selectSample, sampleToImageData } from "./data.js";
 import { evaluateDiscriminator } from "./model.js";
 
 export const DOM = {
@@ -8,10 +8,42 @@ export const DOM = {
 	saveGan: document.getElementById("save-gan"),
 	generateImage: document.getElementById("generate-image"),
 	generateCanvas: document.getElementById("generate-canvas"),
+	generatedImages: document.getElementById("generated-images"),
 	discriminatorLoss: document.getElementById("discriminator-loss"),
 	generatorLoss: document.getElementById("generator-loss"),
 	currentEpoch: document.getElementById("current-epoch"),
 	currentBatch: document.getElementById("current-batch"),
+};
+
+export const createImage = async (sample, scale = 1) => {
+	const imageData = sampleToImageData(sample);
+	const canvas = document.createElement("canvas");
+	await tf.browser.toPixels(imageData, canvas);
+	tf.dispose(sample);
+	tf.dispose(imageData);
+
+	const image = new Image();
+	image.src = canvas.toDataURL();
+	image.width = canvas.width * scale;
+	image.height = canvas.height * scale;
+	return image;
+};
+
+export const displayImage = async (sample, container, scale = 1) => {
+	const image = await createImage(sample, scale);
+	container.appendChild(image);
+};
+
+export const displayBatch = async (batch, container, scale = 1) => {
+	const batchContainer = document.createElement("div");
+	batchContainer.classList.add("batch-container");
+	for (let i = 0; i < batch.shape[0]; i++) {
+		const sample = selectSample(batch, i);
+		const image = await createImage(sample, scale);
+		batchContainer.appendChild(image);
+	}
+	container.appendChild(batchContainer);
+	tf.dispose(batch);
 };
 
 export const displayTrainingInfo = (epoch, batch, batchesPerEpoch, discLoss, genLoss) => {
@@ -21,47 +53,54 @@ export const displayTrainingInfo = (epoch, batch, batchesPerEpoch, discLoss, gen
 	DOM.generatorLoss.innerText = `Generator Loss: ${genLoss.toFixed(3)}`;
 };
 
-export const displayAccuracy = (accReal, accFake) => {
-	console.log(`Accuracy real: ${(accReal * 100).toFixed(2)}%, fake: ${(accFake * 100).toFixed(2)}%`);
+export const displayAccuracy = (realAccuracy, fakeAccuracy) => {
+	console.log(`Accuracy real: ${(realAccuracy * 100).toFixed(2)}%, fake: ${(fakeAccuracy * 100).toFixed(2)}%`);
 };
 
-export const displayGeneratedImage = async (xs, epoch) => {
-	const container = document.createElement("div");
-	container.classList.add("result");
-	const title = document.createElement("h2");
-	title.innerText = `Epoch ${epoch + 1}:`;
+export const displayGeneratedImages = async (batch, container, title) => {
+	// Create batch container
+	const batchContainer = document.createElement("div");
+	batchContainer.classList.add("result");
 
-	xs = xs.slice([0, 0, 0, 0], [1, 28, 28, 1]).reshape([28, 28, 1]);
-	const canvas = document.createElement("canvas");
-	await tf.browser.toPixels(xs, canvas);
+	// Create batch heading
+	const heading = document.createElement("h2");
+	heading.innerText = title;
+	batchContainer.appendChild(heading);
+
+	// Display generated samples as images
+	for (let i = 0; i < 5; i++) {
+		const sample = selectSample(batch, i);
+		const imageData = sampleToImageData(sample);
+		const image = await createImage(imageData);
+		batchContainer.appendChild(image);
+	}
+
+	container.appendChild(batchContainer);
+};
+
+export const displayEpochReport = async (epoch, generator, discriminator, dataset, batchSize = 100) => {
+	// Prepare real and fake samples
+	const [realSamples, realLabels] = selectRealSamples(dataset, batchSize);
+	const [fakeSamples, fakeLabels] = await generateFakeSamples(generator, batchSize);
+
+	// Evaluate discriminator accuracy on real and fake samples
+	const [realLoss, realAccuracy] = evaluateDiscriminator(discriminator, realSamples, realLabels);
+	const [fakeLoss, fakeAccuracy] = evaluateDiscriminator(discriminator, fakeSamples, fakeLabels);
+
+	// Display the discriminator accuracy
+	displayAccuracy(realAccuracy.dataSync(), fakeAccuracy.dataSync());
+
+	// Display the generated images
+	displayGeneratedImages(fakeSamples, DOM.generatedImages, `Epoch ${epoch + 1}:`);
+};
+
+export const generateToCanvas = async (generator, canvas) => {
+	// Generate a fake sample
+	const [samples, labels] = await generateFakeSamples(generator, 1);
 	
-	container.appendChild(title);
-	container.appendChild(canvas);
-	const generatedImages = document.getElementById("generated-images");
-	generatedImages.appendChild(container);
-};
-
-export const displayEpochReport = async (epoch, generator, discriminator, dataset, latentDim, batchSize = 100) => {
-	// prepare real samples
-	const [xReal, yReal] = selectRealSamples(dataset, batchSize);
-
-	// evaluate discriminator on real examples
-	const [lossReal, accReal] = evaluateDiscriminator(discriminator, xReal, yReal);
-
-	// prepare fake examples
-	const [xFake, yFake] = await generateFakeSamples(generator, latentDim, batchSize);
-
-	// evaluate discriminator on fake examples
-	const [lossFake, accFake] = evaluateDiscriminator(discriminator, xFake, yFake);
-
-	// summarize discriminator performance
-	displayAccuracy(accReal.dataSync(), accFake.dataSync());
-
-	// save plot
-	displayGeneratedImage(xFake, epoch);
-};
-
-export const generateToCanvas = async (generator, latentDim, canvas) => {
-	const [X, y] = await generateFakeSamples(generator, latentDim, 1);
-	await tf.browser.toPixels(X.reshape([28, 28, 1]), canvas);
+	// Convert to image data
+	const imageData = sampleToImageData(samples);
+	
+	// Render image data to canvas
+	await tf.browser.toPixels(imageData, canvas);
 };

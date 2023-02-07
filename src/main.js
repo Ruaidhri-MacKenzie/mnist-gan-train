@@ -1,16 +1,16 @@
-import { latentDim, epochs, batchSize } from "./config.js";
-import { loadRealSamples } from "./data.js";
+import { epochs, batchSize } from "./config.js";
+import { loadDataset } from "./data.js";
 import { createGenerator, createDiscriminator, createGan, downloadModel, trainModel } from "./model.js";
 import { DOM, generateToCanvas } from "./ui.js";
 
-const dataset = await loadRealSamples();
+const dataset = await loadDataset();
 
 const discriminator = createDiscriminator();
-const generator = createGenerator(latentDim);
+const generator = createGenerator();
 const gan = createGan(generator, discriminator);
 
 DOM.startTraining.addEventListener("click", (event) => {
-	trainModel(generator, discriminator, gan, dataset, latentDim, epochs, batchSize);
+	trainModel(generator, discriminator, gan, dataset, epochs, batchSize);
 });
 
 DOM.saveGenerator.addEventListener("click", (event) => {
@@ -26,5 +26,5 @@ DOM.saveGan.addEventListener("click", (event) => {
 });
 
 DOM.generateImage.addEventListener("click", (event) => {
-	generateToCanvas(generator, latentDim, DOM.generateCanvas);
+	generateToCanvas(generator, DOM.generateCanvas);
 });
